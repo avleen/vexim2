@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+function generatePassword
+{
+
+perl -e '
+my $password;
+my $_rand;
+$password_length = 10; 
+
+my @chars = split(" ", "A B C D E F G H I J K L M N O P Q R S T U V W X Y Z a b c d e f g h i j k l m n o p q r s t u v w x y z 0 1 2 3 4 5 6 7 8 9");
+srand;
+
+for (my $i=0; $i <= $password_length ;$i++) {
+    $password .= $chars[int rand scalar @chars];
+}
+print $password;
+'
+
+}
+
+
+function exitmessage {
+echo "ERROR: $1, exiting"
+echo "usage:"
+echo "$0 USER@DOMAIN [PASSWORD]"
+exit 1
+}
+
+
+HOME=/root/
+#set -x
+
+EMAIL=$1
+LOCALPART=`echo $EMAIL | cut -d@ -f1`
+D=`        echo $EMAIL | cut -d@ -f2`
+
+PASSWORD=$2
+[ -z "$PASSWORD" ] && PASSWORD=`generatePassword`
+
+[ -n "$LOCALPART" ] && [ -n "$D" ] && [ -n "$PASSWORD" ] || exitmessage "empty option"
+
+HASH=$( dovecot pw -s  SHA512-CRYPT  -p $PASSWORD | sed 's@{SHA512-CRYPT}@@' )
+
+mysql "$DB" -se "select domain from domains where domain='$D'"   | grep -q . || exitmessage "domain doesnt exist"
+
+mysql "$DB" -se "insert into users (domain_id, localpart, username, crypt, uid, gid, smtp, pop, type, enabled, realname, on_avscan, on_spamassassin ) 
+values 
+(
+(select domain_id from domains where domain='$D'),
+'$LOCALPART',
+'$LOCALPART@$D',
+'$HASH',
+'`id -u vexim`',
+'`id -g vexim`',
+'/var/vmail/$D/$LOCALPART/Maildir',
+'/var/vmail/$D/$LOCALPART',
+'local',
+1,
+'$LOCALPART',
+(select avscan  from domains where domain='$D'),
+(select spamassassin from domains where domain='$D')
+)" && echo ADDED || exitmessage "error SQL query"
+
+
+
+echo "Hello, new mailbox!" | mail -s "the 1st letter" "$LOCALPART@$D"
+
+
+echo "$LOCALPART@$D $PASSWORD"
+
+

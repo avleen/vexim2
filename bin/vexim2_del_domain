@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+
+function exitmessage {
+echo "ERROR: $1, exiting"
+echo "usage:"
+echo "$0 DOMAIN"
+exit 1
+}
+
+
+#set -x
+HOME=/root/
+
+D=$1
+
+ [ -n "$D" ]  || exitmessage "empty option"
+
+
+
+mysql "$DB" -se "delete from domains where domain='$D'" 
+mysql "$DB" -se "delete from users where username like '%@$D' ";
+

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+function exitmessage {
+echo "ERROR: $1, exiting"
+echo "usage:"
+echo "$0 DOMAIN [postmasterPASSWORD]"
+exit 1
+}
+
+
+#set -x
+HOME=/root/
+
+D=`echo $1 | perl -ne 's@[^\.\-\w\d]@@g; print lc'`
+PASSWORD=$2
+
+[ -n "$D" ] || exitmessage "empty option"
+
+
+
+
+mysql "$DB" -se "select domain from domains where domain='$D'"   | grep -q . && exitmessage "domain exists"
+
+mysql "$DB" -se "insert into domains (domain, maildir, type, uid, gid, avscan, spamassassin ) values ('$D','/var/vmail/$D','local',
+'`id -u vexim`',
+'`id -g vexim`',
+1,
+1
+);";
+
+
+
+vexim2_new_user postmaster@$D $PASSWORD
+
+mysql "$DB" -se "update users set admin=1 where username='postmaster@$D' ; "
+
+
+
+
+

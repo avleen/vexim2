@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+
+function exitmessage {
+echo "ERROR: $1, exiting"
+echo "usage:"
+echo "$0 ALIASDOMAIN DSTDOMAIN"
+echo "   where mail recieved for u@ALIASDOMAIN stored to u@DSTDOMAIN"
+exit 1
+}
+
+
+HOME=/root/
+#set -x
+
+ALIASDOMAIN=$1
+DSTDOMAIN=$2
+
+[ -n "$ALIASDOMAIN" ] && [ -n "$DSTDOMAIN" ] || exitmessage "empty option"
+
+
+DSTDOMAIN_ID=`mysql "$DB" -se "select domain_id from domains where domain='$DSTDOMAIN' " `
+
+[ -n "$DSTDOMAIN_ID" ]  || exitmessage "DSTDOMAIN doesnt exist"
+
+mysql "$DB" -se "insert into domainalias  (domain_id, alias) values 
+( $DSTDOMAIN_ID, '$ALIASDOMAIN')" && echo ADDED || exitmessage "error SQL query"
+

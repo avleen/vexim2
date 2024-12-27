@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+
+HOME=/root/
+
+
+mysql "$DB" -se "select username,crypt from users "   
+#| grep -v siteadmin 
+
+

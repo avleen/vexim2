@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+
+function exitmessage {
+echo "ERROR: $1, exiting"
+echo "usage:"
+echo "$0 USER@DOMAIN PASSWORD"
+exit 1
+}
+
+
+HOME=/root/
+
+LOCALPART_D=$1
+PASSWORD=$2
+
+[ -n "$LOCALPART_D" ] && [ -n "$PASSWORD" ] || exitmessage "empty option"
+
+
+
+
+HASH=$( dovecot pw -s  SHA512-CRYPT  -p $PASSWORD | sed 's@{SHA512-CRYPT}@@' )
+
+mysql "$DB" -se "select username from users where username='$LOCALPART_D' "   | grep . || exitmessage "user doesnt exist"
+
+mysql "$DB" -se "update users set crypt='$HASH'  
+	where username='$LOCALPART_D' " && echo CHANGED || exitmessage "error SQL query"
+
+
+# echo "password for $LOCALPART@$D has been changed" | mail -s "Email Pass Reset"  admin@admin.com
+

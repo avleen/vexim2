@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+
+function exitmessage {
+echo "ERROR: $1, exiting"
+echo "usage:"
+echo "$0 USER@DOMAIN"
+exit 1
+}
+
+
+HOME=/root/
+
+LOCALPART_D=$1
+
+ [ -n "$LOCALPART_D" ]  || exitmessage "empty option"
+
+mysql "$DB" -se "delete from users where username = '$LOCALPART_D' " && echo DELETED
+
+

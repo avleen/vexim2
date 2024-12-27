@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+
+function exitmessage {
+echo "ERROR: $1, exiting"
+echo "usage:"
+echo "$0 USER@DOMAIN DESTINATION"
+exit 1
+}
+
+
+HOME=/root/
+#set -x
+
+EMAIL=$1
+LOCALPART=`echo $EMAIL | cut -d@ -f1`
+D=`	   echo $EMAIL | cut -d@ -f2`
+DESTINATION=$2
+
+[ -n "$LOCALPART" ] && [ -n "$D" ] && [ -n "$DESTINATION" ] || exitmessage "empty option"
+
+
+
+
+mysql "$DB" -se "select domain from domains where domain='$D'"   | grep . || exitmessage "domain $DOMAIN doesnt exist"
+
+mysql "$DB" -se "insert into users (domain_id, localpart, username,  crypt, uid, gid, smtp, pop, type, enabled, realname ) values 
+(
+(select domain_id from domains where domain='$D'),
+'$LOCALPART',
+'$LOCALPART@$D',
+'',
+'`id -u vexim`',
+'`id -g vexim`',
+'$DESTINATION',
+'/var/vmail/$D/$LOCALPART',
+'local',
+1,
+'$LOCALPART'
+)" && echo ADDED || exitmessage "error SQL query"
+

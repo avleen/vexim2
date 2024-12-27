@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+. /etc/vexim2.conf
+
+
+
+HOME=/root/
+
+
+mysql "$DB" -se " select  concat (alias,' -> ',domain)  from domainalias JOIN domains ON domainalias.domain_id=domains.domain_id ; "| cat
+#| grep -v siteadmin 
+
+
