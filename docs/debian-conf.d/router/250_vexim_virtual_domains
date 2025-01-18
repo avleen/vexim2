@@ -5,12 +5,18 @@
 virtual_vacation:
   driver = accept
   domains = +local_domains
-  condition = ${if and { {!match {$h_precedence:}{(?i)junk|bulk|list}} \
-                         {eq {${lookup mysql{select users.on_vacation from users,domains \
-                                where localpart = '${quote_mysql:$local_part}' \
-                                and domain = '${quote_mysql:$domain}' \
-                                and users.on_vacation = '1' \
-                                and users.domain_id=domains.domain_id}}}{1} }} {yes}{no} }
+  condition = ${if and { \
+    {!match {$h_precedence:}{(?i)junk|bulk|list}} \
+    {eq \
+      {1} \
+      {${lookup mysql{ \
+        SELECT u.on_vacation \
+        FROM users u \
+          INNER JOIN domains d ON (d.domain_id = u.domain_id) \
+        WHERE u.localpart = '${quote_mysql:$local_part}' \
+          AND d.domain = '${quote_mysql:$domain}' \
+      }}} \
+    }} {yes}{no}}
   no_verify
   no_expn
   unseen
@@ -20,46 +26,67 @@ virtual_forward:
   driver = redirect
   domains = +local_domains
   check_ancestor
-  unseen = ${if eq {${lookup mysql{select unseen from users,domains \
-                where localpart = '${quote_mysql:$local_part}' \
-                and domain = '${quote_mysql:$domain}' \
-                and users.on_forward = '1' \
-                and users.domain_id=domains.domain_id}}}{1} {yes}{no}}
-  data = ${lookup mysql{select forward from users,domains \
-        where localpart='${quote_mysql:$local_part}' \
-        and domain='${quote_mysql:$domain}' \
-        and users.domain_id=domains.domain_id \
-        and on_forward = '1'}}
+  unseen = ${if eq \
+    {1} \
+    {${lookup mysql{ \
+      SELECT u.unseen \
+      FROM users u \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+        AND u.on_forward = '1' \
+    }}} {yes}{no}}
+  data = ${lookup mysql{ \
+    SELECT u.forward \
+    FROM users u \
+      INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+    WHERE u.localpart = '${quote_mysql:$local_part}' \
+      and d.domain = '${quote_mysql:$domain}' \
+      and u.on_forward = '1' \
+    }}
   # We explicitly make this condition NOT forward mailing list mail!
-  condition = ${if and { {!match {$h_precedence:}{(?i)junk}} \
-                         {eq {${lookup mysql{select users.on_forward from users,domains \
-                                where localpart = '${quote_mysql:$local_part}' \
-                                and domain = '${quote_mysql:$domain}' \
-                                and users.on_forward = '1' \
-                                and users.domain_id=domains.domain_id}}}{1} }} {yes}{no} }
+  condition = ${if and { \
+    {!match {$h_precedence:}{(?i)junk}} \
+    {eq \
+      {1} \
+      {${lookup mysql{ \
+        SELECT u.on_forward \
+        FROM users u \
+          INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+        WHERE u.localpart = '${quote_mysql:$local_part}' \
+          AND d.domain = '${quote_mysql:$domain}' \
+          AND u.on_forward = '1' \
+      }}} \
+    }} {yes}{no} }
 
 virtual_domains:
   driver = redirect
   domains = +local_domains
   address_data = ${lookup mysql{\
-        select smtp, users.sa_tag*10 AS sa_tag, users.on_spamassassin AND domains.spamassassin AS on_spamassassin, \
-        users.uid AS uid, users.gid AS gid, quota \
-        from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-                and domain = '${quote_mysql:$domain}' \
-                and domains.enabled = '1' \
-                and users.enabled = '1' \
-                and users.domain_id = domains.domain_id}{$value}fail}
+    SELECT \
+      u.smtp, \
+      u.sa_tag * 10 AS sa_tag, \
+      u.on_spamassassin AND d.spamassassin AS on_spamassassin, \
+      u.uid AS uid, \
+      u.gid AS gid, \
+      quota \
+    FROM users u \
+      INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+    WHERE u.localpart = '${quote_mysql:$local_part}' \
+      AND d.domain = '${quote_mysql:$domain}' \
+      AND d.enabled = '1' \
+      AND u.enabled = '1' \
+    }{$value}fail}
   allow_fail
   data = ${extract{smtp}{$address_data}}
   headers_add = ${if and { \
-                    {match{$domain}{$original_domain}} \
-                    {match{$local_part}{$original_local_part}} \
-                    {>={$spam_score_int}{${extract{sa_tag}{$address_data}}}} \
-                    {eq{1}{${extract{on_spamassassin}{$address_data}}}} \
-                    } {X-Spam-Flag: YES\nX-Spam-Score: $acl_m_spam_score\nVEXIM_SPAM_REPORT_HEADER_NAME: $acl_m_spam_report}{} }
-  # using local_part_suffixes enables possibility to use user-"something" localparts
-  # which could cause you trouble if you're creating email-adresses with dashes in between.
+      {match{$domain}{$original_domain}} \
+      {match{$local_part}{$original_local_part}} \
+      {>={$spam_score_int}{${extract{sa_tag}{$address_data}}}} \
+      {eq{1}{${extract{on_spamassassin}{$address_data}}}} \
+    } {X-Spam-Flag: YES\nX-Spam-Score: $acl_m_spam_score\nVEXIM_SPAM_REPORT_HEADER_NAME: $acl_m_spam_report}{} }
+  # using local_part_suffixes enables possibility to use user+"something" localparts
+  # which could cause you trouble if you're creating email addresses with plus signs in them.
   .ifdef VEXIM_LOCALPART_SUFFIX
     local_part_suffix = VEXIM_LOCALPART_SUFFIX
     local_part_suffix_optional
@@ -71,8 +98,8 @@ virtual_domains:
 
 # A group is a list of users
 #
-# if a group is flaged public
-# then anyone on the internet can write to it
+# If a group is marked public
+# then anyone on the Internet can write to it
 # else only members can write to it
 #
 # If not public non member sender will receive a "550 Unknown user" message
@@ -80,34 +107,47 @@ virtual_dom_groups:
   driver = redirect
   domains = +local_domains
   allow_fail
-  senders = ${if eq{Y}{${lookup mysql{select g.is_public \
-                                      from groups g, domains d \
-                                      where d.enabled = '1' and d.domain = '${quote_mysql:$domain}' and \
-                                            d.domain_id = g.domain_id and g.enabled = '1' and \
-                                            g.name = '${quote_mysql:$local_part}'}}} \
-                 {$sender_address} \
-                 {${lookup mysql{select concat_ws('@', u.localpart, d.domain) \
-                                 from domains d, groups g, group_contents c, users u \
-                                 where d.enabled = '1' and d.domain = '${quote_mysql:$domain}' and \
-                                       d.domain_id = g.domain_id and g.name = '${quote_mysql:$local_part}' and \
-                                       g.enabled = '1' and \
-                                       g.is_public = 'N' and c.member_id = u.user_id and \
-                                       d.domain_id = u.domain_id and u.enabled = '1' \
-                                       and u.username = '${quote_mysql:$sender_address}' limit 1}}}}
+  senders = ${if eq \
+    {Y} \
+    {${lookup mysql{ \
+      SELECT g.is_public \
+      FROM domains d \
+        INNER JOIN groups g ON (g.domain_id = d.domain_id) \
+      WHERE d.domain = '${quote_mysql:$domain}' \
+        AND g.name = '${quote_mysql:$local_part}' \
+        AND d.enabled = '1' \
+        AND g.enabled = '1' \
+    }}} \
+    {$sender_address} \
+    {${lookup mysql{ \
+      SELECT CONCAT_WS('@', u.localpart, d.domain) AS sender \
+      FROM domains d \
+        INNER JOIN groups g ON (g.domain_id = d.domain_id) \
+        INNER JOIN group_contents c ON (c.group_id = g.id) \
+        INNER JOIN users u ON (u.user_id = c.member_id AND u.domain_id = d.domain_id) \
+      WHERE d.domain = '${quote_mysql:$domain}' \
+        AND g.name = '${quote_mysql:$local_part}' \
+        AND g.is_public = 'N' \
+        AND d.enabled = '1' \
+        AND g.enabled = '1' \
+        AND u.enabled = '1' \
+      HAVING sender = '${quote_mysql:$sender_address}' \
+      LIMIT 1 \
+    }}}}
   data = ${lookup mysql{ \
-            select concat_ws('@', u.localpart, d.domain) \
-            from domains d, groups g, group_contents c, users u \
-            where d.enabled     = '1'           and \
-                  d.domain      = '${quote_mysql:$domain}'   and \
-                  d.domain_id   = g.domain_id   and \
-                  g.enabled     = '1'           and \
-                  g.id          = c.group_id    and \
-                  c.member_id   = u.user_id     and \
-                  d.domain_id   = u.domain_id   and \
-                  u.enabled     = '1'           and \
-                  g.name        = '${quote_mysql:$local_part}'} }
-  # using local_part_suffixes enables possibility to use user-"something" localparts
-  # which could cause you trouble if you're creating email-adresses with dashes in between.
+    SELECT CONCAT_WS('@', u.localpart, d.domain) \
+    FROM domains d \
+      INNER JOIN groups g ON (g.domain_id = d.domain_id) \
+      INNER JOIN group_contents c ON (c.group_id = g.id) \
+      INNER JOIN users u ON (u.user_id = c.member_id AND u.domain_id = d.domain_id) \
+    WHERE d.domain = '${quote_mysql:$domain}' \
+      AND g.name = '${quote_mysql:$local_part}' \
+      AND d.enabled = '1' \
+      AND g.enabled = '1' \
+      AND u.enabled = '1' \
+    }}
+  # using local_part_suffixes enables possibility to use user+"something" localparts
+  # which could cause you trouble if you're creating email addresses with plus signs in them.
   .ifdef VEXIM_LOCALPART_SUFFIX
     local_part_suffix = VEXIM_LOCALPART_SUFFIX
     local_part_suffix_optional
@@ -120,9 +160,13 @@ virtual_domains_catchall:
   driver = redirect
   domains = +local_domains
   allow_fail
-  data = ${lookup mysql{select smtp from users,domains where localpart = '*' \
-                and domain = '${quote_mysql:$domain}' \
-                and users.domain_id = domains.domain_id}}
+  data = ${lookup mysql{ \
+    SELECT u.smtp \
+    FROM users u \
+      INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+    WHERE localpart = '*' \
+      AND domain = '${quote_mysql:$domain}' \
+    }}
   retry_use_local_part
   file_transport = virtual_delivery
   reply_transport = address_reply
@@ -132,7 +176,10 @@ virtual_domain_alias:
   driver = redirect
   domains = +local_domains
   allow_fail
-  data = ${lookup mysql{select concat('${quote_mysql:$local_part}@', domain) \
-                from domains,domainalias where domainalias.alias = '${quote_mysql:$domain}' \
-                and domainalias.domain_id = domains.domain_id}}
+  data = ${lookup mysql{ \
+    SELECT CONCAT('${quote_mysql:$local_part}@', d.domain) \
+    FROM domains d \
+      INNER JOIN domainalias a ON (a.domain_id = d.domain_id) \
+    WHERE a.alias = '${quote_mysql:$domain}' \
+    }}
   retry_use_local_part

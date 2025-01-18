@@ -4,82 +4,115 @@
 
 # This router fails messages to accounts of type "fail", for which a suggested new email address is specified.
 ditch_551_fails:
-    driver = redirect
-    allow_fail
-    condition = ${if eq {${lookup mysql{select count(*) from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and users.type = 'fail' \
-        and users.smtp != ':fail:' \
-        and users.domain_id=domains.domain_id}}}{1} {yes}{no}}
-    data = :fail: 551 User not local; please try <\
-        ${lookup mysql{select users.smtp from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and users.type = 'fail' \
-        and users.smtp != ':fail:' \
-        and users.domain_id=domains.domain_id}}>
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  condition = ${if eq \
+    {1} \
+    {${lookup mysql{ \
+      SELECT COUNT(*) \
+      FROM users u \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+        AND u.type = 'fail' \
+        AND u.smtp != ':fail:' \
+    }}} \
+    {yes}{no}}
+  data = :fail: 551 User not local; please try <\
+    ${lookup mysql{ \
+      SELECT u.smtp \
+      FROM users u \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+        AND u.type = 'fail' \
+        AND u.smtp != ':fail:' \
+    }}>
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 # This router fails messages to the remaining accounts of type "fail".
 ditch_550_fails:
-    driver = redirect
-    allow_fail
-    condition = ${if eq {${lookup mysql{select count(*) from users,domains \
-         where localpart = '${quote_mysql:$local_part}' \
-         and domain = '${quote_mysql:$domain}' \
-         and users.type = 'fail' \
-         and users.smtp = ':fail:' \
-         and users.domain_id=domains.domain_id}}}{1} {yes}{no}}
-    data = :fail: Unrouteable address
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  condition = ${if eq \
+    {1} \
+    {${lookup mysql{ \
+      SELECT COUNT(*) \
+      FROM users u \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+        AND u.type = 'fail' \
+        AND u.smtp = ':fail:' \
+    }}} \
+    {yes}{no}}
+  data = :fail: Unrouteable address
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 ditch_maxmsgsize:
-    driver = redirect
-    allow_fail
-    condition = ${if >{$message_size}{${lookup mysql{select users.maxmsgsize from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and users.maxmsgsize > 0 \
-        and users.domain_id=domains.domain_id }{${value}K}fail}} {yes}{no}}
-    data = :fail:\n\Your message is too big.\n \
-        Your message was rejected because the user $local_part@$domain\n \
-        does not accept messages larger than \
-        ${lookup mysql{select users.maxmsgsize from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and users.maxmsgsize > 0 \
-        and users.domain_id=domains.domain_id}{${value}K}fail} Kb.
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  condition = ${if > \
+    {$message_size} \
+    {${lookup mysql{ \
+      SELECT u.maxmsgsize \
+      FROM users u \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+        AND u.maxmsgsize > 0 \
+      }{${value}K}fail} \
+    } \
+    {yes}{no}}
+  data = :fail:\n\Your message is too big.\n \
+      Your message was rejected because the user $local_part@$domain\n \
+      does not accept messages larger than \
+      ${lookup mysql{ \
+        SELECT u.maxmsgsize \
+        FROM users u \
+          INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+        WHERE u.localpart = '${quote_mysql:$local_part}' \
+          and d.domain = '${quote_mysql:$domain}' \
+          and u.maxmsgsize > 0 \
+      }{${value}K}fail} Kb.
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 # malware drop router
 ditch_malware:
-    driver = redirect
-    allow_fail
-    data = :blackhole:
-    condition = ${if and { {match {$h_X-ACL-Warn:}{.*malware.*}} \
-        {eq {${lookup mysql{select users.on_avscan from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and users.on_avscan = '1' \
-        and domains.avscan = '1' \
-        and users.domain_id=domains.domain_id}}}{1} }} {yes}{no} }
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
+  driver = redirect
+  allow_fail
+  data = :blackhole:
+  condition = ${if and { \
+    {match {$h_X-ACL-Warn:}{.*malware.*}} \
+    {eq \
+      {1} \
+      {${lookup mysql{ \
+        SELECT u.on_avscan \
+        FROM users u \
+          INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+        WHERE u.localpart = '${quote_mysql:$local_part}' \
+          AND d.domain = '${quote_mysql:$domain}' \
+          AND u.on_avscan = '1' \
+          AND d.avscan = '1' \
+      }}} \
+    }} \
+    {yes}{no}}
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
 
 # This router caused me so much s*** it's untrue.
 # If your db lookup returns 'no data', then $spam_in_score is
@@ -87,119 +120,160 @@ ditch_malware:
 # Eventually got this working with Philip Hazel and Codiac's help.
 # spam drop router
 ditch_spam_drop:
-    driver = redirect
-    allow_fail
-    data = :blackhole:
-    condition = ${if >={$spam_score_int}{${lookup mysql{select users.sa_refuse * 10 from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and users.on_spamassassin = '1' \
-        and domains.spamassassin = '1' \
-        and users.spam_drop = '1' \
-        and users.domain_id=domains.domain_id \
-        and users.sa_refuse > 0 }{$value}fail}} {yes}{no}}
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  data = :blackhole:
+  condition = ${if >= \
+    {$spam_score_int} \
+    {${lookup mysql{ \
+      SELECT u.sa_refuse * 10 \
+      FROM users u \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE u.localpart = '${quote_mysql:$local_part}' \
+        and d.domain = '${quote_mysql:$domain}' \
+        and d.spamassassin = '1' \
+        and u.on_spamassassin = '1' \
+        and u.spam_drop = '1' \
+        and u.sa_refuse > 0 \
+      }{$value}fail} \
+    } \
+    {yes}{no}}
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 ditch_spam:
-    driver = redirect
-    allow_fail
-    file_transport = virtual_ditch_spam_transport
-    data = ${lookup mysql{select concat(smtp,'/.Spam') \
-        from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and domains.enabled = '1' \
-        and users.enabled = '1' \
-        and users.domain_id = domains.domain_id}}
-    condition = ${if >={$spam_score_int}{${lookup mysql{select \
-        users.sa_refuse * 10 from users,domains \
-        where localpart = '${quote_mysql:$local_part}' \
-        and domain = '${quote_mysql:$domain}' \
-        and users.on_spamassassin = '1' \
-        and domains.spamassassin = '1' \
-        and users.spam_drop = '0' \
-        and users.on_forward = '0' \
-        and users.type = 'local' \
-        and users.domain_id=domains.domain_id \
-        and users.sa_refuse > 0 }{$value}fail}} {yes}{no}}
-    headers_add = ${if and { \
-                     {match{$domain}{$original_domain}} \
-                     {match{$local_part}{$original_local_part}} \
-                     } {X-Spam-Flag: YES\nX-Spam-Score: $acl_m_spam_score\nVEXIM_SPAM_REPORT_HEADER_NAME: $acl_m_spam_report}{} }
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  file_transport = virtual_ditch_spam_transport
+  data = ${lookup mysql{ \
+    SELECT CONCAT(u.smtp , '/.Spam') \
+    FROM users u \
+      INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+    WHERE u.localpart = '${quote_mysql:$local_part}' \
+      and d.domain = '${quote_mysql:$domain}' \
+      and d.enabled = '1' \
+      and u.enabled = '1' \
+    }}
+  condition = ${if >= \
+    {$spam_score_int} \
+    {${lookup mysql{ \
+      SELECT u.sa_refuse * 10 \
+      FROM users u \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+        AND u.on_spamassassin = '1' \
+        AND d.spamassassin = '1' \
+        AND u.spam_drop = '0' \
+        AND u.on_forward = '0' \
+        AND u.type = 'local' \
+        AND u.sa_refuse > 0 \
+      }{$value}fail} \
+    } \
+    {yes}{no}}
+  headers_add = ${if \
+    and { \
+      {match{$domain}{$original_domain}} \
+      {match{$local_part}{$original_local_part}} \
+    } \
+    {X-Spam-Flag: YES\nX-Spam-Score: $acl_m_spam_score\nVEXIM_SPAM_REPORT_HEADER_NAME: $acl_m_spam_report}{}}
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 ditch_hdrmailer:
-    driver = redirect
-    allow_fail
-    data = :blackhole:
-    condition = ${if eq {${lookup mysql{select count(*) from blocklists,users,domains \
-        where blocklists.blockhdr = 'x-mailer' \
-        and blocklists.blockval = '${quote_mysql:$h_x-mailer:}' \
-        and users.localpart = '${quote_mysql:$local_part}' \
-        and domains.domain = '${quote_mysql:$domain}' \
-        and domains.domain_id=blocklists.domain_id \
-        and users.user_id=blocklists.user_id}}}{1} {yes}{no}}
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  data = :blackhole:
+  condition = ${if eq \
+    {1} \
+    {${lookup mysql{\
+      SELECT COUNT(*) \
+      FROM blocklists b \
+        INNER JOIN users u ON (u.user_id = b.user_id) \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE b.blockhdr = 'x-mailer' \
+        AND b.blockval = '${quote_mysql:$h_x-mailer:}' \
+        AND u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+    }}} \
+    {yes}{no}}
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 ditch_hdrto:
-    driver = redirect
-    allow_fail
-    data = :blackhole:
-    condition = ${if eq {${lookup mysql{select count(*) from blocklists,users,domains \
-        where blocklists.blockhdr = 'to' \
-        and blocklists.blockval = '${quote_mysql:$h_to:}' \
-        and users.localpart = '${quote_mysql:$local_part}' \
-        and domains.domain = '${quote_mysql:$domain}' \
-        and domains.domain_id=blocklists.domain_id \
-        and users.user_id=blocklists.user_id}}}{1} {yes}{no}}
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  data = :blackhole:
+  condition = ${if eq \
+    {1} \
+    {${lookup mysql{ \
+      SELECT COUNT(*) \
+      FROM blocklists b \
+        INNER JOIN users u ON (b.user_id = u.user_id) \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE b.blockhdr = 'to' \
+        AND b.blockval = '${quote_mysql:$h_to:}' \
+        AND u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+    }}} \
+    {yes}{no}}
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 ditch_hdrfrom:
-    driver = redirect
-    allow_fail
-    data = :blackhole:
-    condition = ${if eq {${lookup mysql{select count(*) from blocklists,users,domains \
-        where blocklists.blockhdr = 'from' \
-        and blocklists.blockval = '${quote_mysql:$h_from:}' \
-        and users.localpart = '${quote_mysql:$local_part}' \
-        and domains.domain = '${quote_mysql:$domain}' \
-        and domains.domain_id=blocklists.domain_id \
-        and users.user_id=blocklists.user_id}}}{1} {yes}{no}}
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  data = :blackhole:
+  condition = ${if eq \
+    {1} \
+    {${lookup mysql{ \
+      SELECT COUNT(*) \
+      FROM blocklists b \
+        INNER JOIN users u ON (b.user_id = u.user_id) \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE b.blockhdr = 'from' \
+        AND b.blockval = '${quote_mysql:$h_from:}' \
+        AND u.localpart = '${quote_mysql:$local_part}' \
+        AND d.domain = '${quote_mysql:$domain}' \
+    }}} \
+    {yes}{no}}
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part
 
 ditch_hdrsubject:
-    driver = redirect
-    allow_fail
-    data = :blackhole:
-    condition = ${if eq {${lookup mysql{select count(*) from blocklists,users,domains \
-        where blocklists.blockhdr = 'subject' \
-        and blocklists.blockval = '${quote_mysql:$h_subject:}' \
-        and users.localpart = '${quote_mysql:$local_part}' \
-        and domains.domain = '${quote_mysql:$domain}' \
-        and domains.domain_id=blocklists.domain_id \
-        and users.user_id=blocklists.user_id}}}{1} {yes}{no}}
-    .ifdef VEXIM_LOCALPART_SUFFIX
-      local_part_suffix = VEXIM_LOCALPART_SUFFIX
-      local_part_suffix_optional
-    .endif
-    retry_use_local_part
+  driver = redirect
+  allow_fail
+  data = :blackhole:
+  condition = ${if eq \
+    {1} \
+    {${lookup mysql{ \
+      SELECT COUNT(*) \
+      FROM blocklists b \
+        INNER JOIN users u ON (b.user_id = u.user_id) \
+        INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+      WHERE b.blockhdr = 'subject' \
+        and b.blockval = '${quote_mysql:$h_subject:}' \
+        and u.localpart = '${quote_mysql:$local_part}' \
+        and d.domain = '${quote_mysql:$domain}' \
+    }}} \
+    {yes}{no}}
+  .ifdef VEXIM_LOCALPART_SUFFIX
+    local_part_suffix = VEXIM_LOCALPART_SUFFIX
+    local_part_suffix_optional
+  .endif
+  retry_use_local_part

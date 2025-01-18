@@ -9,12 +9,18 @@ virtual_ditch_spam_transport:
   mode = 0600
   maildir_format = true
   create_directory = true
-  user = ${lookup mysql{select users.uid  from users,domains \ 
-                where localpart = '${quote_mysql:$local_part}' \ 
-                and domain = '${quote_mysql:$domain}' \ 
-                and users.domain_id = domains.domain_id}}
-  group = ${lookup mysql{select users.gid from users,domains \ 
-                where localpart = '${quote_mysql:$local_part}' \ 
-                and domain = '${quote_mysql:$domain}' \ 
-                and users.domain_id = domains.domain_id}}
+  user = ${lookup mysql{ \
+    SELECT u.uid \
+    FROM users u \
+      INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+    WHERE u.localpart = '${quote_mysql:$local_part}' \
+      AND d.domain = '${quote_mysql:$domain}' \
+    }}
+  group = ${lookup mysql{ \
+    SELECT u.gid \
+    FROM users u \
+      INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+    WHERE u.localpart = '${quote_mysql:$local_part}' \
+      AND d.domain = '${quote_mysql:$domain}' \
+    }}
   maildir_use_size_file = false

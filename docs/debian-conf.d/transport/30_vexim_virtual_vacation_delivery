@@ -3,12 +3,15 @@
 #######################################
 
 virtual_vacation_delivery:
-  driver   = autoreply
-  from     = "${local_part}@${domain}"
-  to       = ${sender_address}
-  subject  = "Autoreply from ${local_part}@${domain}"
-  headers  = "Content-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: quoted-printable"
-  text     = ${lookup mysql{select vacation from users,domains \
-                where domain='${quote_mysql:$domain}' \
-                and localpart='${quote_mysql:$local_part}' \
-                and users.domain_id=domains.domain_id}}
+  driver = autoreply
+  from = "${local_part}@${domain}"
+  to = ${sender_address}
+  subject = "Autoreply from ${local_part}@${domain}"
+  headers = "Content-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: quoted-printable"
+  text = ${lookup mysql{ \
+    SELECT u.vacation \
+    FROM users u \
+      INNER JOIN domains d ON (u.domain_id = d.domain_id) \
+    WHERE d.domain='${quote_mysql:$domain}' \
+      AND u.localpart='${quote_mysql:$local_part}' \
+    }}
